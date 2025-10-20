@@ -1,0 +1,17 @@
+# Ignore the Python virtual environment
+venv/
+
+# --- SECURITY: IGNORE ALL PERSONAL DATA ---
+# Ignore the folder containing face images
+dataset/
+
+# Ignore the compiled file of face encodings
+known_faces.pkl
+# ---
+
+# Ignore temporary audio files
+*.mp3
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
