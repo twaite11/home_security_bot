@@ -14,15 +14,18 @@ import sys
 ENCODINGS_PATH = "known_faces.pkl"
 DATASET_PATH = "dataset"
 GREETING_COOLDOWN_SECONDS = 20
-# A tolerance setting for face recognition. Lower is stricter (0.5), higher is more lenient (0.7).
 FACE_RECOGNITION_TOLERANCE = 0.6
 GREETING_SOUND_FILE = "greeting.mp3"
 ENROLLMENT_SOUND_FILE = "enroll.mp3"
+# --- NEW: Time to wait before enrolling an unknown person ---
+UNKNOWN_FACE_TIMER_SECONDS = 3.0
 
 # --- State Variables ---
 last_greeting_time = 0
 greeted_persons_this_session = set()
 auto_enrollment_in_progress = False
+# --- NEW: Variable to track when an unknown face was first seen ---
+unknown_face_start_time = None
 
 # --- Helper Functions ---
 def speak(text, sound_file=GREETING_SOUND_FILE):
@@ -42,7 +45,6 @@ def listen_for_name():
         print("\n[INFO] Calibrating microphone for ambient noise...")
         r.adjust_for_ambient_noise(source, duration=1)
         speak("Please say your name now.", ENROLLMENT_SOUND_FILE)
-        # --- FIX: Increased sleep duration to prevent audio feedback ---
         time.sleep(1.0)
         try:
             audio = r.listen(source, timeout=5, phrase_time_limit=4)
@@ -68,7 +70,6 @@ def enroll_new_person(frame, pipeline):
     person_name = listen_for_name()
 
     if person_name:
-        # --- FIX: Made the check case-insensitive and more robust ---
         if "please say your name now" in person_name.lower():
             speak("Registration failed due to an audio feedback error. Please try again.", ENROLLMENT_SOUND_FILE)
             auto_enrollment_in_progress = False
@@ -140,7 +141,6 @@ try:
         if not color_frame: continue
         
         frame = np.asanyarray(color_frame.get_data())
-        # --- FIX: Corrected the OpenCV color conversion constant ---
         rgb_small = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), (0, 0), fx=0.5, fy=0.5)
 
         boxes = face_recognition.face_locations(rgb_small, model="cnn")
@@ -150,7 +150,6 @@ try:
         names_for_display = []
         unknown_person_present = False
 
-        # --- FIX: Match names to specific encodings for accurate display ---
         for encoding in encodings:
             if data["encodings"]:
                 matches = face_recognition.compare_faces(data["encodings"], encoding, tolerance=FACE_RECOGNITION_TOLERANCE)
@@ -172,16 +171,29 @@ try:
 
         time_since_last_greeting = time.time() - last_greeting_time
 
+        # --- NEW: Logic for 3-second enrollment delay ---
+        if unknown_person_present and len(current_persons_in_frame) == 1:
+            if unknown_face_start_time is None:
+                print("[INFO] Unknown person detected. Starting 3-second timer for enrollment...")
+                unknown_face_start_time = time.time()
+            
+            elif time.time() - unknown_face_start_time > UNKNOWN_FACE_TIMER_SECONDS:
+                print("[INFO] 3-second timer complete. Initiating enrollment.")
+                enroll_new_person(frame, pipeline)
+                last_greeting_time = time.time()
+                unknown_face_start_time = None # Reset timer
+                continue 
+        else:
+            if unknown_face_start_time is not None:
+                print("[INFO] Unknown person no longer detected or is not alone. Resetting timer.")
+            unknown_face_start_time = None # Reset timer if conditions aren't met
+
+        # --- Greeting Logic ---
         if not current_persons_in_frame and greeted_persons_this_session:
             print("[INFO] Frame is clear. Resetting greeting session.")
             greeted_persons_this_session.clear()
 
         if current_persons_in_frame and time_since_last_greeting > GREETING_COOLDOWN_SECONDS:
-            if unknown_person_present and len(current_persons_in_frame) == 1:
-                enroll_new_person(frame, pipeline)
-                last_greeting_time = time.time() 
-                continue
-
             newly_seen_persons = current_persons_in_frame - greeted_persons_this_session
             
             if newly_seen_persons:
@@ -198,7 +210,6 @@ try:
                     last_greeting_time = time.time()
                     greeted_persons_this_session.update(recognized_names)
 
-        # --- FIX: Use the accurately matched names for display ---
         for (top, right, bottom, left), name_to_display in zip(boxes, names_for_display):
             top *= 2; right *= 2; bottom *= 2; left *= 2
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
