@@ -1,6 +1,6 @@
 Project: Personalized AI Home Security System
 
-Version: 1.0
+Version: 1.1.0
 Last Updated: October 20, 2025
 
 This document outlines the development status, operational instructions, and future plans for an intelligent, edge-based home security system. The project's goal is to create a self-contained security solution that runs all AI processing locally on an NVIDIA Jetson Xavier NX for enhanced privacy and real-time performance.
