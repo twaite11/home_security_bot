@@ -1,99 +1,152 @@
-Project: Personalized AI Home Security System
+# Project: Personalized AI Home Security System
 
-Version: 1.1.0
-Last Updated: October 20, 2025
+Version: 2.0.0
+Last Updated: October 24, 2025
 
-This document outlines the development status, operational instructions, and future plans for an intelligent, edge-based home security system. The project's goal is to create a self-contained security solution that runs all AI processing locally on an NVIDIA Jetson Xavier NX for enhanced privacy and real-time performance.
+## 1. Project Overview
 
-## Core Technologies
+This project is an intelligent, edge-based home security and greeting system. Think, Ring Doorbell Camera on crack... but not always the good stuff. It runs all AI processing locally on an NVIDIA Jetson Xavier NX for maximum performance and privacy.
 
-Hardware: NVIDIA Jetson Xavier NX, Intel RealSense D455 Camera, USB Microphone, USB Speaker, Arduino Uno, 16x2 I2C LCD.
+The system uses the RealSense camera to monitor a video feed in real-time. It performs high-speed, GPU-accelerated face detection and recognition to identify individuals. It captures images and sends them to a private Discord server for real-time alerts.
 
-Software & AI: Python, PyTorch, Torchvision, OpenCV, face_recognition, pyrealsense2, pyserial, gtts, SpeechRecognition.
+Core Features:
 
-Current Progress & Implemented Features
+GPU-Accelerated AI: Uses PyTorch and facenet-pytorch's MTCNN model to run face detection on the Jetson's GPU (cuda:0), ensuring a fast and responsive framerate.
 
-The core application is feature-complete and operational. The system can successfully identify known individuals, greet them, and automatically enroll unknown individuals.
+Real-time Recognition: Identifies known users and greets them by name (e.g., "Welcome, master Tyler and master Anna Elise.").
 
-### [✅] System & AI Setup:
+Instant Discord Alerts: Sends an immediate push notification to a private Discord server when any person (known or unknown) is detected, complete with a snapshot, name, and timestamp.
 
-Jetson development environment is fully configured with all necessary drivers and dependencies.
+Autonomous Enrollment: If an unknown person is detected alone for 3 seconds, the system automatically starts a voice-based registration process.
 
-Python virtual environment (venv) ensures dependency isolation.
+Self-Updating AI: After any new face is registered, the system automatically re-trains its recognition model (known_faces.pkl) and restarts itself to immediately learn the new person.
 
-PyTorch and a source-built Torchvision are installed and verified.
+## 2. Technical Architecture
 
-### [✅] Hardware Integration:
+Hardware
 
-RealSense D455 Camera: Fully integrated for live, high-framerate video capture.
+Compute: NVIDIA Jetson Xavier NX
 
-USB Microphone: Integrated for voice-based user enrollment.
+Camera: Intel RealSense D455
 
-USB Speaker: Integrated for spoken greetings and system prompts.
+Audio Input: USB Microphone
 
-### [✅] Core Application Logic (main.py):
+Audio Output: USB Speaker
 
-Real-time Face Recognition: The system can detect and identify multiple faces in the camera's view against a trained dataset.
+Display: 7" HDMI Screen (for live feed)
 
-Dynamic Verbal Greetings: Issues a custom "Welcome master..." greeting, correctly formatted for one or multiple recognized individuals.
+Core Software & Libraries
 
-Intelligent Auto-Enrollment:
+Environment: Python 3.8 (via venv)
 
-If an unknown person is detected alone for 3 seconds, the system automatically starts the registration process.
+Core AI Framework: PyTorch (NVIDIA-built version for JetPack)
 
-It uses text-to-speech to ask the person for their name and captures their image.
+GPU Face Detector: facenet-pytorch (MTCNN)
 
-Autonomous Database Update & Restart:
+Face Recognition: face_recognition (for encoding & comparison)
 
-After a new person is enrolled for the first time, the system automatically runs the encode_faces.py script in the background.
+Camera Interface: pyrealsense2
 
-It then gracefully restarts the main application to load the newly trained face data.
+Display: OpenCV (for drawing the feed, boxes, and status bar)
 
-### [✅] User Management Scripts:
+Voice Input: SpeechRecognition
 
-add_face_voice.py: A utility script for manually enrolling users via camera and microphone.
+Voice Output: gTTS & mpg123
 
-encode_faces.py: A script to process all images in the dataset folder and generate the known_faces.pkl recognition file.
+Alerts: requests (for Discord Webhooks)
 
-How to Use the System
+Configuration: python-dotenv (for secure API key management)
 
-Manual Enrollment (Optional First Step): To add initial users, run the manual enrollment script. For each person, take 10-15 photos.
+## How It Works: The main.py Loop
 
-# Activate the virtual environment first
-source venv/bin/activate
-python add_face_voice.py
+The main application operates in a continuous loop, performing these steps on every frame:
 
+Initialize: Loads the known_faces.pkl file. Initializes the MTCNN face detector on the GPU (cuda:0).
 
-Initial Face Encoding: After enrolling the first users manually, you must create the initial recognition database.
+Capture: Grabs a 640x480 frame from the RealSense camera.
 
-python encode_faces.py
+Fast Detection (MTCNN): The full-resolution frame is passed to the MTCNN model. This model runs on the GPU, rapidly detecting all faces and returning their bounding boxes.
 
+Recognition (face_recognition): The frame and the bounding boxes are passed to the face_recognition library to generate facial encodings (the unique "fingerprint" for each face).
 
-Launch the System: Run the main application.
+Compare: These live encodings are compared against the loaded database (known_faces.pkl) to find a match.
 
-python main.py
+Display: The system draws bounding boxes and names ("master Tyler", "Unknown") on the video feed. A black status bar at the bottom shows the current system message (e.g., "Monitoring...", "Welcome, master Tyler.").
 
+Event Logic:
 
-The system is now fully active. It will greet known users and automatically handle the registration and re-training for any new, unknown individuals it encounters.
+If a Known Person is seen: The system checks if they are new to this "session." If so, it speaks a "Welcome, master..." greeting (handling single or multiple names) and sends a Discord alert with their name, timestamp, and snapshot.
 
-## Next Steps & Future Plans
+If an Unknown Person is seen (and is alone):
 
-The final phase of the project involves integrating the physical display and deploying the application as an automated service.
+A 3-second timer (UNKNOWN_FACE_TIMER_SECONDS) begins.
 
-[ ] Arduino & LCD Integration:
+If the person remains for 3 seconds, a Discord alert is sent for the "Unrecognized person."
 
-Modify main.py to connect to the Arduino via pyserial.
+The enroll_new_person() function is triggered.
 
-Send messages to the LCD to display system status (e.g., "Welcome, Tyler", "ALERT: Unrecognized Person").
+Auto-Enrollment:
 
-[ ] System Automation (Deployment):
+The system speaks to the person, asking them to register and say their name.
 
-Create a systemd service file to ensure the main.py application launches automatically when the Jetson boots up, turning it into a true appliance.
+The name is captured via the microphone.
 
-[ ] Optimization and Enhancements:
+The current frame is saved as an image in dataset/<Person's Name>/.
 
-Convert the final AI models to an optimized format using NVIDIA TensorRT to maximize inference speed.
+The script then runs encode_faces.py as a subprocess.
 
-Integrate a cloud service like Twilio to send SMS alerts when an unrecognized person is detected.
+Finally, it calls os.execv to restart main.py, forcing it to load the new, updated recognition model.
 
-Build a simple web interface to view a live feed and manage enrolled users remotely.
+## 4. The MTCNN Advantage (Performance)
+
+A key part of this project is its real-time performance.
+
+The Problem: The face_recognition library's built-in cnn model is accurate but runs on the CPU. On the Jetson, this is extremely slow, often resulting in 1-2 frames per second (FPS), making real-time application impossible.
+
+The Solution: We replace only the detection part. We use facenet-pytorch, which provides a pre-trained MTCNN (Multi-task Cascaded Convolutional Network) model.
+
+How it Works: By initializing MTCNN(device='cuda:0'), we tell the library to use the PyTorch backend to run all its calculations on the Jetson's GPU.
+
+The Result: The AI workload is offloaded from the CPU to the specialized AI hardware. This provides a massive 10x-30x speedup, allowing us to run detection on the full 640x480 video feed while maintaining a fast, responsive framerate.
+
+## 5. User Management (manage_users.py)
+
+A separate script is provided to list and delete users from your database.
+
+To List All Users:
+(Make sure your venv is active)
+```
+python manage_users.py list
+```
+
+Output:
+```
+[INFO] Listing all registered users:
+- person1 
+- person2
+```
+
+To Delete a User:
+This command will delete the user's image folder and automatically re-run encode_faces.py to update the AI model.
+
+```python manage_users.py delete --name "Tyler"
+```
+
+Output:
+
+```[WARNING] You are about to permanently delete all data for 'Tyler'.
+Are you sure? (y/n): y
+[SUCCESS] Successfully deleted user 'Tyler'.
+[INFO] Re-running face encoding to update the model...
+[SUCCESS] Encodings file 'known_faces.pkl' has been updated.
+```
+
+7. Future Plans
+
+[ ] System Automation (Deployment): Create a systemd service file to ensure main.py launches automatically when the Jetson boots up.
+
+[ ] Remote Management UI: Build a simple web interface (using Flask) to view the live feed and manage enrolled users from a phone or browser.
+
+[ ] Cloud Backup: Modify encode_faces.py to also back up the entire dataset folder to a secure cloud drive.
+
+[ ] Physical Enclosure: Design and 3D-print a custom case to house all components (Jetson, screen, camera, mic) in a single unit.
